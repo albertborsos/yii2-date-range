@@ -53,7 +53,7 @@
         this.linkedCalendars = true;
         this.autoUpdateInput = true;
         this.alwaysShowCalendars = false;
-        this.allowEndDateFirst = false;
+        this.selectedLast = 'endDate';
         this.ranges = {};
 
         this.opens = 'right';
@@ -277,9 +277,6 @@
 
         if (typeof options.alwaysShowCalendars === 'boolean')
             this.alwaysShowCalendars = options.alwaysShowCalendars;
-
-        if (typeof options.allowEndDateFirst === 'boolean')
-            this.allowEndDateFirst = options.allowEndDateFirst;
 
         // update day names order to firstDay
         if (this.locale.firstDay != 0) {
@@ -1256,6 +1253,19 @@
             var cal = $(e.target).parents('.drp-calendar');
             var date = cal.hasClass('left') ? this.leftCalendar.calendar[row][col] : this.rightCalendar.calendar[row][col];
 
+            if (this.timePicker) {
+                var hour = parseInt(this.container.find('.right .hourselect').val(), 10);
+                if (!this.timePicker24Hour) {
+                    var ampm = this.container.find('.right .ampmselect').val();
+                    if (ampm === 'PM' && hour < 12)
+                        hour += 12;
+                    if (ampm === 'AM' && hour === 12)
+                        hour = 0;
+                }
+                var minute = parseInt(this.container.find('.right .minuteselect').val(), 10);
+                var second = this.timePickerSeconds ? parseInt(this.container.find('.right .secondselect').val(), 10) : 0;
+                return date.clone().hour(hour).minute(minute).second(second);
+            }
             //
             // this function needs to do a few things:
             // * alternate between selecting a start and end date for the range,
@@ -1264,55 +1274,32 @@
             // * if single date picker mode, and time picker isn't enabled, apply the selection immediately
             // * if one of the inputs above the calendars was focused, cancel that manual input
             //
-            if (this.endDate || date.isBefore(this.startDate, 'day')) {
-                if (this.timePicker) {
-                    var hour = parseInt(this.container.find('.left .hourselect').val(), 10);
-                    if (!this.timePicker24Hour) {
-                        var ampm = this.container.find('.left .ampmselect').val();
-                        if (ampm === 'PM' && hour < 12)
-                            hour += 12;
-                        if (ampm === 'AM' && hour === 12)
-                            hour = 0;
-                    }
-                    var minute = parseInt(this.container.find('.left .minuteselect').val(), 10);
-                    var second = this.timePickerSeconds ? parseInt(this.container.find('.left .secondselect').val(), 10) : 0;
-                    date = date.clone().hour(hour).minute(minute).second(second);
-                }
-
-                if (date.isBefore(this.startDate, 'day') && this.allowEndDateFirst && !(this.startDate && this.endDate)) {
-                    // end date selected first
-                    this.setEndDate(this.startDate.clone());
+            if (this.endDate) {
+                if (
+                    (this.selectedLast === 'endDate' && date.isSame(this.endDate, 'day')) ||
+                    (this.selectedLast === 'endDate' && date.isBefore(this.endDate, 'day'))
+                ) {
                     this.setStartDate(date.clone());
-
-                    if (this.autoApply) {
-                        this.calculateChosenLabel();
-                        this.clickApply();
-                    }
+                    this.selectedLast = 'startDate';
+                    this.minDate = date;
+                } else if (
+                    (this.selectedLast === 'endDate' && date.isAfter(this.endDate, 'day')) ||
+                    (this.selectedLast === 'startDate' && date.isSame(this.startDate, 'day')) ||
+                    (this.selectedLast === 'startDate' && date.isBefore(this.endDate, 'day')) ||
+                    (this.selectedLast === 'startDate' && date.isAfter(this.startDate, 'day'))
+                ) {
+                    this.setEndDate(date.clone());
+                    this.selectedLast = 'endDate';
+                    this.minDate = false;
+                } else { // date after end date
+                    this.setStartDate(this.endDate.clone());
+                    this.setEndDate(date.clone());
+                    this.selectedLast = 'endDate';
                 }
-                else
-                {
-                    this.endDate = null;
-                    this.setStartDate(date.clone());
-                }
-            } else if (!this.endDate && date.isBefore(this.startDate)) {
-                //special case: clicking the same date for start/end,
-                //but the time of the end date is before the start date
-                this.setEndDate(this.startDate.clone());
             } else { // picking end
-                if (this.timePicker) {
-                    var hour = parseInt(this.container.find('.right .hourselect').val(), 10);
-                    if (!this.timePicker24Hour) {
-                        var ampm = this.container.find('.right .ampmselect').val();
-                        if (ampm === 'PM' && hour < 12)
-                            hour += 12;
-                        if (ampm === 'AM' && hour === 12)
-                            hour = 0;
-                    }
-                    var minute = parseInt(this.container.find('.right .minuteselect').val(), 10);
-                    var second = this.timePickerSeconds ? parseInt(this.container.find('.right .secondselect').val(), 10) : 0;
-                    date = date.clone().hour(hour).minute(minute).second(second);
-                }
                 this.setEndDate(date.clone());
+                this.setStartDate(date.clone());
+                this.selectedLast = 'endDate';
                 if (this.autoApply) {
                     this.calculateChosenLabel();
                     this.clickApply();
@@ -1321,8 +1308,14 @@
 
             if (this.singleDatePicker) {
                 this.setEndDate(this.startDate);
+                this.selectedLast = 'endDate';
                 if (!this.timePicker)
                     this.clickApply();
+            }
+
+            if (this.autoApply) {
+                this.calculateChosenLabel();
+                this.clickApply();
             }
 
             this.updateView();
@@ -1372,6 +1365,7 @@
         clickCancel: function(e) {
             this.startDate = this.oldStartDate;
             this.endDate = this.oldEndDate;
+            this.minDate = false;
             this.hide();
             this.element.trigger('cancel.daterangepicker', this);
         },
